@@ -5,15 +5,10 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
-mod config;
-mod crypto;
-mod db;
-mod handlers;
-mod lib;
-mod models;
-mod proof;
-
-use lib::AppState;
+use attestation_service::config;
+use attestation_service::db;
+use attestation_service::handlers;
+use attestation_service::AppState;
 
 #[tokio::main]
 async fn main() {
@@ -37,14 +32,15 @@ async fn main() {
         .await
         .expect("failed to connect to database");
 
-    sqlx::migrate!()
-        .run(&pool)
+    db::run_migrations(&pool)
         .await
         .expect("failed to run migrations");
 
+    let port = cfg.port;
+
     let state = AppState {
         db: pool,
-        config: cfg.clone(),
+        config: cfg,
     };
 
     let app = Router::new()
@@ -66,7 +62,7 @@ async fn main() {
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let addr = format!("0.0.0.0:{}", cfg.port);
+    let addr = format!("0.0.0.0:{port}");
     tracing::info!("starting attestation service on {addr}");
 
     let listener = tokio::net::TcpListener::bind(&addr)
