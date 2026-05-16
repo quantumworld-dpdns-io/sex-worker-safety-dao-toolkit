@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 
