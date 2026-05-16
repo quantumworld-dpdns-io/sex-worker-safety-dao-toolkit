@@ -1,0 +1,13 @@
+name = "AnalyticsService"
+uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+version = "0.1.0"
+
+[deps]
+Genie = "1.0"
+HTTP = "1"
+JSON3 = "1"
+DataFrames = "1"
+CSV = "0.10"
+Logging = "1"
+Dates = "1"
+Statistics = "1"

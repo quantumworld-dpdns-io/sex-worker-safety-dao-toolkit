@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - UPSTREAM_ATTESTATION=${UPSTREAM_ATTESTATION:-http://attestation:3001}
+      - UPSTREAM_CHECKIN=${UPSTREAM_CHECKIN:-http://checkin-dao:3002}
+      - UPSTREAM_ANALYTICS=${UPSTREAM_ANALYTICS:-http://analytics:3003}
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    networks:
+      - choreo-network
+
+  attestation:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.attestation
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - ATTESTATION_ENCRYPTION_KEY=${ENCRYPTION_KEY}
+    networks:
+      - choreo-network
+
+  checkin-dao:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.checkin-dao
+    ports:
+      - "3002:3002"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - QDRANT_HOST=${QDRANT_HOST:-qdrant}
+    networks:
+      - choreo-network
+
+  analytics:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.analytics
+    ports:
+      - "3003:3003"
+    environment:
+      - QDRANT_HOST=${QDRANT_HOST:-qdrant}
+      - DATABASE_URL=${DATABASE_URL}
+    networks:
+      - choreo-network
+
+networks:
+  choreo-network:
+    driver: bridge

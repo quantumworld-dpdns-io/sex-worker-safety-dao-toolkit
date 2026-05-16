@@ -1,0 +1,27 @@
+FROM golang:1.22-alpine AS builder
+
+RUN apk add --no-cache gcc musl-dev
+
+WORKDIR /app
+COPY services/checkin-dao/go.mod services/checkin-dao/go.sum* ./
+RUN go mod download 2>/dev/null || true
+
+COPY services/checkin-dao/ ./
+RUN CGO_ENABLED=0 go build -o /checkin-dao ./...
+
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+
+RUN addgroup -S checkin && adduser -S -G checkin checkin
+
+COPY --from=builder /checkin-dao /usr/local/bin/checkin-dao
+
+USER checkin
+
+EXPOSE 3002
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3002/health || exit 1
+
+ENTRYPOINT ["/usr/local/bin/checkin-dao"]
