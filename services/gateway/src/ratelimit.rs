@@ -1,12 +1,13 @@
 use governor::clock::DefaultClock;
-use governor::middleware::NoStateMiddleware;
-use governor::state::direct::InMemoryState;
+use governor::middleware::NoOpMiddleware;
+use governor::state::direct::NotKeyed;
+use governor::state::InMemoryState;
 use governor::{Quota, RateLimiter as GovRateLimiter};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::sync::Mutex;
 
-type PerIpLimiter = GovRateLimiter<InMemoryState, DefaultClock, NoStateMiddleware>;
+type PerIpLimiter = GovRateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>;
 
 pub struct RateLimiter {
     limiters: Mutex<HashMap<String, PerIpLimiter>>,

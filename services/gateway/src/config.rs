@@ -1,9 +1,11 @@
+#[allow(dead_code)]
 use std::env;
 
 #[derive(Debug, Clone)]
 pub struct Config {
     pub gateway_port: u16,
     pub jwt_secret: String,
+    #[allow(dead_code)]
     pub jwt_expiry_hours: u64,
     pub upstream_attestation: String,
     pub upstream_checkin: String,
@@ -12,6 +14,7 @@ pub struct Config {
     pub rate_limit_window_secs: u64,
     pub acme_domain: Option<String>,
     pub acme_email: Option<String>,
+    #[allow(dead_code)]
     pub encryption_key: Option<String>,
 }
 
@@ -52,6 +55,7 @@ impl Config {
         self.jwt_secret.as_bytes().to_vec()
     }
 
+    #[allow(dead_code)]
     pub fn encryption_key_bytes(&self) -> Option<Vec<u8>> {
         self.encryption_key.as_ref().map(|hex_str| {
             hex::decode(hex_str).expect("ENCRYPTION_KEY must be valid hex (64 hex chars = 32 bytes)")

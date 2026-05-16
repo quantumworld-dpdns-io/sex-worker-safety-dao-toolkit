@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -10,6 +11,7 @@ pub struct Claims {
     pub iat: usize,
 }
 
+#[allow(dead_code)]
 pub fn create_token(
     user_id: &str,
     role: &str,
