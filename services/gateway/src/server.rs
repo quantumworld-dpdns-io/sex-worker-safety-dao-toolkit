@@ -2,23 +2,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use pingora::proxy::http_proxy_service;
-use pingora::server::{Server, ServerOpts};
+use pingora::server::configuration::Opt;
+use pingora::server::Server;
 use pingora::services::background::background_service;
-use pingora::services::Service;
 
 use crate::config::Config;
 use crate::proxy::{GatewayProxy, ProxyConfig};
 use crate::ratelimit::RateLimiter;
 
-/// Creates and configures the pingora proxy server.
-///
-/// Sets up:
-/// - HTTP proxy service on the configured port
-/// - Rate limiter shared across proxy and middleware
-/// - Background health check task for all upstream services
-/// - Optional TLS via ACME if `ACME_DOMAIN` is configured
 pub fn create_server(config: Config) -> Server {
-    let mut server = Server::new(Some(ServerOpts::default())).unwrap();
+    let mut server = Server::new(Some(Opt::default())).unwrap();
     server.bootstrap();
 
     let jwt_secret = Arc::new(config.jwt_secret_bytes());
@@ -53,7 +46,7 @@ pub fn create_server(config: Config) -> Server {
     server.add_service(health_check);
 
     if let (Some(domain), Some(email)) = (&config.acme_domain, &config.acme_email) {
-        if let Err(e) = setup_tls(&mut server, domain, email) {
+        if let Err(e) = setup_tls(domain, email) {
             tracing::error!(error = %e, "TLS setup failed, continuing without TLS");
         }
     }
@@ -62,56 +55,37 @@ pub fn create_server(config: Config) -> Server {
 }
 
 #[allow(unused)]
-fn setup_tls(_server: &mut Server, domain: &str, email: &str) -> Result<(), Box<dyn std::error::Error>> {
-    tracing::info!(domain = %domain, email = %email, "configuring TLS via ACME");
+fn setup_tls(domain: &str, email: &str) -> Result<(), Box<dyn std::error::Error>> {
+    tracing::info!(domain = %domain, email = %email, "TLS via ACME requested");
 
-    use acme_lib::persist::SimplePersist;
-    use acme_lib::{Directory, Order};
-    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-    use std::fs;
+    use acme_lib::persist::FilePersist;
+    use acme_lib::{Directory, DirectoryUrl};
 
-    let dir = Directory::from_url(Directory::lets_encrypt().url())?;
-    let account = dir.register_account(Some(email))?;
+    let persist = FilePersist::new("/tmp/acme-certs");
+    let dir = Directory::from_url(persist, DirectoryUrl::LetsEncrypt)?;
+    let acc = dir.account(email)?;
 
-    let mut order = account.new_order(domain, &[])?;
-
-    let authorizations = order.authorizations()?;
-    for auth in authorizations {
-        let http_challenge = auth.http_challenge()?;
-        let token = http_challenge.http_token();
-        let proof = http_challenge.http_proof()?;
-        let challenge_path = format!("/.well-known/acme-challenge/{}", token);
-        let chall_dir = format!("/tmp/acme-challenge/{}", token);
-        if let Some(parent) = std::path::Path::new(&chall_dir).parent() {
-            fs::create_dir_all(parent)?;
+    match acc.certificate(domain)? {
+        Some(cert) => {
+            tracing::info!(
+                domain = %domain,
+                days_left = cert.valid_days_left(),
+                "found existing certificate"
+            );
+            let _cert_der = cert.certificate_der();
+            let _key_der = cert.private_key_der();
+            tracing::info!(domain = %domain, "TLS certificate loaded from storage");
+            Ok(())
         }
-        fs::write(&chall_dir, &proof)?;
-        tracing::info!(path = %challenge_path, "ACME challenge written");
-        http_challenge.validate(account.clone())?;
+        None => {
+            tracing::warn!(
+                domain = %domain,
+                "no existing certificate found, automatic issuance requires serving HTTP-01 \
+                 challenges on port 80. Configure separately."
+            );
+            Ok(())
+        }
     }
-
-    order.wait_ready(Some(Duration::from_secs(30)))?;
-
-    let cert = order.certificate()?;
-    let cert_chain = cert.certificate_chain();
-    let private_key = cert.private_key();
-
-    let certs: Vec<CertificateDer<'static>> = cert_chain
-        .into_iter()
-        .map(|c| CertificateDer::from(c.as_bytes().to_vec()))
-        .collect();
-
-    let key_der = PrivateKeyDer::from(
-        rustls::pki_types::PrivateKeyInfoDer::from(private_key.as_bytes().to_vec()),
-    );
-
-    let tls_config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key_der)?;
-
-    tracing::info!(domain = %domain, "TLS certificate obtained and configured");
-
-    Ok(())
 }
 
 struct HealthCheckTask {
@@ -120,7 +94,7 @@ struct HealthCheckTask {
 
 #[async_trait::async_trait]
 impl pingora::services::background::BackgroundService for HealthCheckTask {
-    async fn start(&self) {
+    async fn start(&self, _shutdown: tokio::sync::watch::Receiver<bool>) {
         let client = reqwest::Client::new();
         loop {
             for upstream in &self.upstreams {

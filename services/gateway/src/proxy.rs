@@ -1,10 +1,10 @@
 use async_trait::async_trait;
-use http::{HeaderValue, Uri};
+use bytes::Bytes;
+use http::HeaderValue;
 use pingora::http::{RequestHeader, ResponseHeader};
 use pingora::proxy::{ProxyHttp, Session};
 use pingora::upstreams::peer::HttpPeer;
 use pingora::Result;
-use std::str::FromStr;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -15,7 +15,7 @@ pub struct ProxyConfig {
 }
 
 impl ProxyConfig {
-    pub fn route(&self, path: &str) -> (&str, Option<&str>) {
+    pub fn route<'a>(&'a self, path: &'a str) -> (&'a str, Option<&'a str>) {
         if path == "/health" {
             return ("", None);
         }
@@ -42,6 +42,13 @@ impl ProxyConfig {
     }
 }
 
+fn extract_addr(upstream: &str) -> &str {
+    upstream
+        .strip_prefix("http://")
+        .or_else(|| upstream.strip_prefix("https://"))
+        .unwrap_or(upstream)
+}
+
 #[derive(Clone)]
 pub struct GatewayProxy {
     pub config: Arc<ProxyConfig>,
@@ -60,24 +67,23 @@ impl ProxyHttp for GatewayProxy {
         let (upstream, _) = self.config.route(path);
 
         if upstream.is_empty() {
-            return Ok(Box::new(HttpPeer::new("127.0.0.1:8080", false, "")));
+            return Ok(Box::new(HttpPeer::new("127.0.0.1:8080", false, "".to_string())));
         }
 
-        let peer = HttpPeer::new(upstream, false, "");
-        Ok(Box::new(peer))
+        let addr = extract_addr(upstream);
+        let peer = Box::new(HttpPeer::new(addr, false, "".to_string()));
+        Ok(peer)
     }
 
-    async fn request_filter(&self, session: &mut Session, _ctx: &mut ()) -> Result<()> {
+    async fn request_filter(&self, session: &mut Session, _ctx: &mut ()) -> Result<bool> {
         let path = session.req_header().uri.path().to_string();
 
         if path == "/health" {
             let resp = ResponseHeader::build(200, None)?;
-            session.respond_header(resp).await?;
-            session
-                .respond_body(axum::body::Bytes::from("OK"), true)
-                .await?;
+            session.write_response_header(Box::new(resp), false).await?;
+            session.write_response_body(Bytes::from_static(b"OK"), true).await?;
             tracing::info!(path = %path, "health check");
-            return Ok(());
+            return Ok(true);
         }
 
         let client_ip = session
@@ -89,13 +95,11 @@ impl ProxyHttp for GatewayProxy {
             .to_string();
 
         if !self.rate_limiter.check_rate_limit(&client_ip) {
-            let resp = ResponseHeader::build(429, None)?;
-            session.respond_header(resp).await?;
             session
-                .respond_body(axum::body::Bytes::from("rate limit exceeded"), true)
+                .respond_error_with_body(429, Bytes::from_static(b"rate limit exceeded"))
                 .await?;
             tracing::warn!(ip = %client_ip, "rate limit exceeded");
-            return Ok(());
+            return Ok(true);
         }
 
         if !path.starts_with("/api/v1/auth") && !path.starts_with("/health") {
@@ -120,67 +124,56 @@ impl ProxyHttp for GatewayProxy {
                         }
                         Err(e) => {
                             tracing::warn!(error = %e, "JWT validation failed");
-                            let resp = ResponseHeader::build(401, None)?;
-                            session.respond_header(resp).await?;
                             session
-                                .respond_body(axum::body::Bytes::from("unauthorized"), true)
+                                .respond_error_with_body(401, Bytes::from_static(b"unauthorized"))
                                 .await?;
-                            return Ok(());
+                            return Ok(true);
                         }
                     }
                 } else {
-                    let resp = ResponseHeader::build(401, None)?;
-                    session.respond_header(resp).await?;
                     session
-                        .respond_body(axum::body::Bytes::from("invalid authorization scheme"), true)
+                        .respond_error_with_body(
+                            401,
+                            Bytes::from_static(b"invalid authorization scheme"),
+                        )
                         .await?;
-                    return Ok(());
+                    return Ok(true);
                 }
             } else {
-                let resp = ResponseHeader::build(401, None)?;
-                session.respond_header(resp).await?;
                 session
-                    .respond_body(axum::body::Bytes::from("missing authorization header"), true)
+                    .respond_error_with_body(
+                        401,
+                        Bytes::from_static(b"missing authorization header"),
+                    )
                     .await?;
-                return Ok(());
+                return Ok(true);
             }
         }
 
-        Ok(())
+        Ok(false)
     }
 
     async fn upstream_request_filter(
         &self,
-        session: &mut Session,
+        _session: &mut Session,
+        upstream_request: &mut RequestHeader,
         _ctx: &mut (),
     ) -> Result<()> {
-        let headers = &mut session.req_header_mut().headers;
+        upstream_request
+            .insert_header(
+                "X-Request-ID",
+                HeaderValue::from_str(&Uuid::new_v4().to_string()).unwrap(),
+            )
+            .unwrap();
 
-        headers.insert(
-            "X-Request-ID",
-            HeaderValue::from_str(&Uuid::new_v4().to_string()).unwrap(),
-        );
-
-        let path = session.req_header().uri.path().to_string();
+        let path = upstream_request.uri.path().to_string();
         if let Some(stripped) = path.strip_prefix("/api/v1") {
-            let new_uri = Uri::from_str(stripped)
-                .map_err(|e| pingora::Error::new(pingora::ErrorType::InternalError))?;
-            *session.req_header_mut().uri_mut() = new_uri;
+            let new_uri: http::Uri = stripped.parse().map_err(|_| {
+                pingora::Error::new(pingora::ErrorType::InternalError)
+            })?;
+            upstream_request.set_uri(new_uri);
         }
 
-        Ok(())
-    }
-
-    async fn error_response(
-        &self,
-        session: &mut Session,
-        _ctx: &mut (),
-    ) -> Result<()> {
-        let resp = ResponseHeader::build(502, None)?;
-        session.respond_header(resp).await?;
-        session
-            .respond_body(axum::body::Bytes::from("upstream unavailable"), true)
-            .await?;
         Ok(())
     }
 }

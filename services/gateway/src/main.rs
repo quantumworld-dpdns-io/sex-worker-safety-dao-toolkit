@@ -20,6 +20,6 @@ async fn main() {
         "starting API gateway"
     );
 
-    let mut srv = server::create_server(cfg);
+    let srv = server::create_server(cfg);
     srv.run_forever();
 }
