@@ -81,7 +81,7 @@ impl ProxyHttp for GatewayProxy {
         if path == "/health" {
             let resp = ResponseHeader::build(200, None)?;
             session.write_response_header(Box::new(resp), false).await?;
-            session.write_response_body(Bytes::from_static(b"OK"), true).await?;
+            session.write_response_body(Some(Bytes::from_static(b"OK")), true).await?;
             tracing::info!(path = %path, "health check");
             return Ok(true);
         }

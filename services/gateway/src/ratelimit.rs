@@ -1,7 +1,7 @@
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
 use governor::state::direct::NotKeyed;
-use governor::state::in_memory::InMemoryState;
+use governor::state::InMemoryState;
 use governor::{Quota, RateLimiter as GovRateLimiter};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
