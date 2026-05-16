@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
@@ -35,8 +36,8 @@ func (s *RegistryService) SubmitReport(ctx context.Context, reporterID string, i
 		Category:         input.Category,
 		Description:      input.Description,
 		Status:           "pending",
-		CreatedAt:        now(),
-		UpdatedAt:        now(),
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 
 	_, err := s.pool.Exec(ctx, `
@@ -55,22 +56,21 @@ func (s *RegistryService) SubmitReport(ctx context.Context, reporterID string, i
 		Str("client", input.ClientIdentifier).
 		Msg("bad client report submitted")
 
-	go func() {
-		if s.qdrantClient != nil {
-			c := context.Background()
-			vector := hashToVector(input.ClientIdentifier + input.Description)
-			payload := map[string]interface{}{
-				"report_id":         report.ID,
-				"client_identifier": input.ClientIdentifier,
-				"category":          input.Category,
-				"status":            report.Status,
-				"created_at":        report.CreatedAt.String(),
+		go func() {
+			if s.qdrantClient != nil {
+				vector := hashToVector(input.ClientIdentifier + input.Description)
+				payload := map[string]interface{}{
+					"report_id":         report.ID,
+					"client_identifier": input.ClientIdentifier,
+					"category":          input.Category,
+					"status":            report.Status,
+					"created_at":        report.CreatedAt.String(),
+				}
+				if err := s.qdrantClient.StoreEmbedding("bad_client_reports", report.ID, vector, payload); err != nil {
+					log.Error().Err(err).Msg("failed to store embedding for report")
+				}
 			}
-			if err := s.qdrantClient.StoreEmbedding("bad_client_reports", report.ID, vector, payload); err != nil {
-				log.Error().Err(err).Msg("failed to store embedding for report")
-			}
-		}
-	}()
+		}()
 
 	return report, nil
 }
@@ -137,7 +137,7 @@ func (s *RegistryService) UpdateReportStatus(ctx context.Context, reportID, mode
 		return nil, fmt.Errorf("invalid status: %s", status)
 	}
 
-	now := now()
+	now := time.Now()
 	_, err := s.pool.Exec(ctx, `
 		UPDATE bad_client_reports SET status = $1, moderator_id = $2, moderated_at = $3, updated_at = $4
 		WHERE id = $5`,
@@ -179,6 +179,4 @@ func hashToVector(input string) []float32 {
 	return v
 }
 
-func now() time.Time {
-	return time.Now()
-}
+
