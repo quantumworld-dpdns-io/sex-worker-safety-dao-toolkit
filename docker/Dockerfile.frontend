@@ -1,0 +1,32 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+FROM node:20-alpine AS runner
+
+RUN addgroup -S frontend && adduser -S -G frontend frontend
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+COPY --from=builder --chown=frontend:frontend /app/.next/standalone ./
+COPY --from=builder --chown=frontend:frontend /app/public ./public
+COPY --from=builder --chown=frontend:frontend /app/.next/static ./.next/static
+
+USER frontend
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
+
+CMD ["node", "server.js"]

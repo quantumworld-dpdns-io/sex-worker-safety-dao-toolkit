@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      attestation:
+        condition: service_started
+      checkin-dao:
+        condition: service_started
+      analytics:
+        condition: service_started
+    environment:
+      - UPSTREAM_ATTESTATION=http://attestation:3001
+      - UPSTREAM_CHECKIN=http://checkin-dao:3002
+      - UPSTREAM_ANALYTICS=http://analytics:3003
+      - JWT_SECRET=${JWT_SECRET:-dev-secret}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}
+    restart: unless-stopped
+
+  attestation:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.attestation
+    ports:
+      - "3001:3001"
+    depends_on:
+      db:
+        condition: service_started
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@db:5432/safety-dao}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret}
+      - ATTESTATION_ENCRYPTION_KEY=${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef}
+    restart: unless-stopped
+
+  checkin-dao:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.checkin-dao
+    ports:
+      - "3002:3002"
+    depends_on:
+      db:
+        condition: service_started
+      qdrant:
+        condition: service_started
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@db:5432/safety-dao}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret}
+      - QDRANT_HOST=qdrant
+    restart: unless-stopped
+
+  analytics:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.analytics
+    ports:
+      - "3003:3003"
+    depends_on:
+      qdrant:
+        condition: service_started
+    environment:
+      - QDRANT_HOST=qdrant
+      - DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@db:5432/safety-dao}
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: safety-dao
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:
+  pg_data:
