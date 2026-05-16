@@ -32,6 +32,10 @@ pub async fn init_pool(database_url: &str) -> Result<PgPool, DbError> {
     Ok(pool)
 }
 
+pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
+    sqlx::migrate!().run(pool).await
+}
+
 pub async fn create_attestation(
     pool: &PgPool,
     att: NewAttestation,
@@ -48,8 +52,8 @@ pub async fn create_attestation(
     )
     .bind(id)
     .bind(&att.circuit_type)
-    .bind("")
-    .bind("")
+    .bind(&att.proof_data)
+    .bind(&att.proof_hash)
     .bind(&att.user_id_hash)
     .bind(&att.payload)
     .bind(false)
@@ -99,15 +103,16 @@ pub async fn get_attestation(
     }))
 }
 
-pub async fn verify_attestation(pool: &PgPool, id: Uuid) -> Result<(), DbError> {
+pub async fn update_verification_status(pool: &PgPool, id: Uuid, verified: bool) -> Result<(), DbError> {
     let result = sqlx::query(
         r#"
         UPDATE attestations
-        SET is_verified = true, updated_at = $2
+        SET is_verified = $2, updated_at = $3
         WHERE id = $1
         "#,
     )
     .bind(id)
+    .bind(verified)
     .bind(chrono::Utc::now())
     .execute(pool)
     .await?;

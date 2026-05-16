@@ -101,6 +101,69 @@ impl ProofEngine for NoirProver {
     }
 }
 
+pub struct Risc0Prover;
+
+impl Risc0Prover {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ProofEngine for Risc0Prover {
+    fn generate_proof(
+        &self,
+        circuit_type: &str,
+        private_inputs: &[u8],
+        public_inputs: &[u8],
+    ) -> Result<ProofOutput, ProofError> {
+        let mut hasher = Sha256::new();
+        hasher.update(b"risc0");
+        hasher.update(circuit_type.as_bytes());
+        hasher.update(private_inputs);
+        hasher.update(public_inputs);
+        let hash = hasher.finalize();
+        let proof_hash = hex::encode(hash);
+
+        let proof_data = format!(
+            "risc0_mock:{}:{}",
+            proof_hash,
+            hex::encode(private_inputs)
+        );
+
+        Ok(ProofOutput {
+            proof_data,
+            proof_hash,
+            public_outputs: public_inputs.to_vec(),
+        })
+    }
+
+    fn verify_proof(
+        &self,
+        proof_data: &str,
+        public_inputs: &[u8],
+    ) -> Result<bool, ProofError> {
+        let parts: Vec<&str> = proof_data.splitn(2, ':').collect();
+        if parts.len() != 2 {
+            return Ok(false);
+        }
+
+        let expected_prefix = "risc0_mock";
+        if parts[0] != expected_prefix {
+            return Ok(false);
+        }
+
+        let hash_str = parts[1];
+        let hash_bytes = hex::decode(hash_str)
+            .map_err(|_| ProofError::Verification("invalid hex in proof data".into()))?;
+
+        let mut hasher = Sha256::new();
+        hasher.update(public_inputs);
+        let expected = hasher.finalize();
+
+        Ok(hash_bytes == expected.as_slice())
+    }
+}
+
 pub fn generate_proof_hash(proof_data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(proof_data);

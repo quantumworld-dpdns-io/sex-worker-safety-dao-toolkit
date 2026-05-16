@@ -77,11 +77,11 @@ pub async fn create_attestation(
         circuit_type: body.circuit_type,
         user_id_hash,
         payload: encrypted_payload,
+        proof_data: proof_output.proof_data,
+        proof_hash: proof_output.proof_hash.clone(),
     };
 
-    let mut attestation = db::create_attestation(&state.db, new_att).await?;
-    attestation.proof_data = proof_output.proof_data;
-    attestation.proof_hash = proof_output.proof_hash.clone();
+    let attestation = db::create_attestation(&state.db, new_att).await?;
 
     Ok(Json(ProofResponse {
         attestation_id: attestation.id,
@@ -122,9 +122,7 @@ pub async fn verify_attestation(
 
     let is_valid = prover.verify_proof(&attestation.proof_data, public_inputs)?;
 
-    if is_valid {
-        db::verify_attestation(&state.db, id).await?;
-    }
+    db::update_verification_status(&state.db, id, is_valid).await?;
 
     Ok(Json(serde_json::json!({
         "id": id,

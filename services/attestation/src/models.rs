@@ -20,6 +20,8 @@ pub struct NewAttestation {
     pub circuit_type: String,
     pub user_id_hash: String,
     pub payload: Vec<u8>,
+    pub proof_data: String,
+    pub proof_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,4 +53,9 @@ pub struct AttestationResponse {
     pub is_verified: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorResponse {
+    pub error: String,
 }
