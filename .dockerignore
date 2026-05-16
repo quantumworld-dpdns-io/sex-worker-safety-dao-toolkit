@@ -1,0 +1,10 @@
+.git/
+.gitignore
+**/target/
+**/node_modules/
+**/.env
+**/*.md
+docs/
+tests/
+circuits/
+.DS_Store
