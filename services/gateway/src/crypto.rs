@@ -4,6 +4,7 @@ use aes_gcm::{Aes256Gcm, Key, Nonce};
 
 /// Encrypt plaintext using AES-256-GCM.
 /// Returns the nonce (first 12 bytes) concatenated with the ciphertext.
+#[allow(dead_code)]
 pub fn encrypt_payload(plaintext: &[u8], key: &[u8]) -> Vec<u8> {
     let key = Key::<Aes256Gcm>::from_slice(key);
     let cipher = Aes256Gcm::new(key);
@@ -16,6 +17,7 @@ pub fn encrypt_payload(plaintext: &[u8], key: &[u8]) -> Vec<u8> {
 
 /// Decrypt ciphertext that was encrypted with `encrypt_payload`.
 /// Expects the nonce as the first 12 bytes followed by the ciphertext.
+#[allow(dead_code)]
 pub fn decrypt_payload(ciphertext: &[u8], key: &[u8]) -> Vec<u8> {
     let key = Key::<Aes256Gcm>::from_slice(key);
     let cipher = Aes256Gcm::new(key);
